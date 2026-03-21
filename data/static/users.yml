@@ -1,11 +1,39 @@
+# ✅ FIX: All plaintext passwords and sensitive security answers replaced with
+# environment variable references. Set these variables in your .env file or
+# secrets manager before starting the application.
+#
+# Required env vars:
+#   ADMIN_PASSWORD, ADMIN_SEC_ANSWER
+#   JIM_PASSWORD, JIM_SEC_ANSWER
+#   BENDER_PASSWORD, BENDER_SEC_ANSWER
+#   BJOERN_GOOGLE_PASSWORD
+#   CISO_PASSWORD, CISO_SEC_ANSWER
+#   SUPPORT_PASSWORD, SUPPORT_SEC_ANSWER
+#   MORTY_PASSWORD, MORTY_SEC_ANSWER
+#   RAPPER_PASSWORD, RAPPER_SEC_ANSWER
+#   JANNIK_PASSWORD, JANNIK_SEC_ANSWER
+#   TIMO_PASSWORD, TIMO_SEC_ANSWER
+#   AMY_PASSWORD, AMY_SEC_ANSWER
+#   BJOERN_PASSWORD, BJOERN_SEC_ANSWER
+#   BJOERN_OWASP_PASSWORD, BJOERN_OWASP_SEC_ANSWER
+#   CHRIS_PASSWORD, CHRIS_SEC_ANSWER
+#   ACCOUNTANT_PASSWORD, ACCOUNTANT_SEC_ANSWER
+#   UVOGIN_PASSWORD, UVOGIN_SEC_ANSWER
+#   DEMO_PASSWORD, DEMO_SEC_ANSWER
+#   JOHN_PASSWORD
+#   EMMA_PASSWORD
+#   STAN_PASSWORD, STAN_SEC_ANSWER
+#   ETHEREUM_PASSWORD, ETHEREUM_SEC_ANSWER
+#   TESTING_PASSWORD
+
 -
   email: admin
-  password: 'admin123'
+  password: '%ADMIN_PASSWORD%'
   key: admin
   role: 'admin'
   securityQuestion:
     id: 2
-    answer: '@xI98PxDO+06!'
+    answer: '%ADMIN_SEC_ANSWER%'
   feedback:
     comment: 'I love this shop! Best products in town! Highly recommended!'
     rating: 5
@@ -28,13 +56,13 @@
       expYear: 2086
 -
   email: jim
-  password: 'ncc-1701'
+  password: '%JIM_PASSWORD%'
   key: jim
   role: 'customer'
   walletBalance: 100
   securityQuestion:
     id: 1
-    answer: 'Samuel' # https://en.wikipedia.org/wiki/James_T._Kirk
+    answer: '%JIM_SEC_ANSWER%'
   feedback:
     comment: 'Great shop! Awesome service!'
     rating: 4
@@ -60,12 +88,12 @@
       expYear: 2099
 -
   email: bender
-  password: 'OhG0dPlease1nsertLiquor!'
+  password: '%BENDER_PASSWORD%'
   key: bender
   role: 'customer'
   securityQuestion:
     id: 10
-    answer: "Stop'n'Drop" # http://futurama.wikia.com/wiki/Suicide_booth
+    answer: '%BENDER_SEC_ANSWER%'
   feedback:
     comment: 'Nothing useful available here!'
     rating: 1
@@ -85,7 +113,7 @@
 -
   email: bjoern.kimminich@gmail.com
   username: bkimminich
-  password: 'bW9jLmxpYW1nQGhjaW5pbW1pay5ucmVvamI='
+  password: '%BJOERN_GOOGLE_PASSWORD%'
   customDomain: true
   key: bjoernGoogle
   role: 'admin'
@@ -104,121 +132,121 @@
       expYear: 2092
 -
   email: ciso
-  password: 'mDLx?94T~1CfVfZMzw@sJ9f?s3L6lbMqE70FfI8^54jbNikY5fymx7c!YbJb'
+  password: '%CISO_PASSWORD%'
   key: ciso
   role: 'deluxe'
   securityQuestion:
     id: 7
-    answer: 'Brd?j8sEMziOvvBf§Be?jFZ77H?hgm'
+    answer: '%CISO_SEC_ANSWER%'
 -
   email: support
-  password: 'J6aVjTgOpRs@?5l!Zkq2AYnCE@RF$P'
+  password: '%SUPPORT_PASSWORD%'
   key: support
   role: 'admin'
   securityQuestion:
     id: 10
-    answer: 'SC OLEA SRL' # http://www.olea.com.ro/
+    answer: '%SUPPORT_SEC_ANSWER%'
 -
   email: morty
-  password: 'focusOnScienceMorty!focusOnScience'
+  password: '%MORTY_PASSWORD%'
   key: morty
   role: 'customer'
   walletBalance: 100
   securityQuestion:
     id: 7
-    answer: '5N0wb41L' # http://rickandmorty.wikia.com/wiki/Snuffles
+    answer: '%MORTY_SEC_ANSWER%'
 -
   email: mc.safesearch
-  password: 'Mr. N00dles'
+  password: '%RAPPER_PASSWORD%'
   key: rapper
   role: 'customer'
   walletBalance: 13337
   securityQuestion:
     id: 8
-    answer: 'I even shared my pizza bagels with you!'
+    answer: '%RAPPER_SEC_ANSWER%'
 -
   email: J12934
-  password: '0Y8rMnww$*9VFYE§59-!Fg1L6t&6lB'
+  password: '%JANNIK_PASSWORD%'
   key: jannik
   role: 'admin'
   securityQuestion:
     id: 1
-    answer: 'azjTLprq2im6p86RbFrA41L'
+    answer: '%JANNIK_SEC_ANSWER%'
 -
   email: wurstbrot
   username: wurstbrot
-  password: 'EinBelegtesBrotMitSchinkenSCHINKEN!'
+  password: '%TIMO_PASSWORD%'
   key: timo
   role: 'admin'
   securityQuestion:
     id: 1
-    answer: 'NZMJLjEinU7TFElDIYW8'
+    answer: '%TIMO_SEC_ANSWER%'
 -
   email: amy
-  password: 'K1f.....................'
+  password: '%AMY_PASSWORD%'
   key: amy
   role: 'customer'
   walletBalance: 48
   securityQuestion:
     id: 8
-    answer: 'Dr. Dr. Dr. Dr. Zoidberg'
+    answer: '%AMY_SEC_ANSWER%'
 -
   email: bjoern
-  password: 'monkey summer birthday are all bad passwords but work just fine in a long passphrase'
+  password: '%BJOERN_PASSWORD%'
   key: bjoern
   profileImage: '12.png'
   role: 'admin'
   isAdmin: true
   securityQuestion:
     id: 9
-    answer: 'West-2082' # http://www.alte-postleitzahlen.de/uetersen
+    answer: '%BJOERN_SEC_ANSWER%'
 -
   email: bjoern@owasp.org
-  password: 'kitten lesser pooch karate buffoon indoors'
+  password: '%BJOERN_OWASP_PASSWORD%'
   customDomain: true
   key: bjoernOwasp
   role: 'deluxe'
   profileImage: '13.jpg'
   securityQuestion:
     id: 7
-    answer: 'Zaya' # https://www.youtube.com/watch?v=Lu0-kDdtVf4
+    answer: '%BJOERN_OWASP_SEC_ANSWER%'
 -
   email: chris.pike
-  password: 'uss enterprise'
+  password: '%CHRIS_PASSWORD%'
   key: chris
   role: 'customer'
   deletedFlag: true
   securityQuestion:
     id: 1
-    answer: 'greenwood'
+    answer: '%CHRIS_SEC_ANSWER%'
 -
   email: accountant
-  password: 'i am an awesome accountant'
+  password: '%ACCOUNTANT_PASSWORD%'
   key: accountant
   role: 'accounting'
   lastLoginIp: '123.456.789'
   securityQuestion:
     id: 7
-    answer: 'sdAffsdfrefrbgreq3423'
+    answer: '%ACCOUNTANT_SEC_ANSWER%'
 -
   email: uvogin
-  password: 'muda-muda > ora-ora' # https://www.youtube.com/watch?v=vnJv8IoLMwc
+  password: '%UVOGIN_PASSWORD%'
   key: uvogin
   role: 'customer'
   walletBalance: 100
   securityQuestion:
     id: 12
-    answer: 'Silence of the Lambs' # https://www.imdb.com/title/tt0102926/
+    answer: '%UVOGIN_SEC_ANSWER%'
 -
   email: demo
-  password: 'demo'
+  password: '%DEMO_PASSWORD%'
   customDomain: true
   key: test
   role: 'customer'
   walletBalance: 200
   securityQuestion:
     id: 10
-    answer: 'ACME Inc.'
+    answer: '%DEMO_SEC_ANSWER%'
   address:
     - fullName: 'Tim Tester'
       mobileNum: 4917000000
@@ -235,29 +263,29 @@
 -
   email: john
   username: j0hNny
-  password: 'y&x5Z#f6W532Z4445#Ae2HkwZVyDb7&oCUaDzFU'
+  password: '%JOHN_PASSWORD%'
   key: john
   role: 'customer'
 -
   email: emma
   username: E=ma²
-  password: 'y&x5Z#f6W532ZUf$q3DsdgfgfgxxUsvoCUaDzFU'
+  password: '%EMMA_PASSWORD%'
   key: emma
   role: 'customer'
 -
   email: stan
   username: SmilinStan
-  password: 'ship coffin krypt cross estate supply insurance asbestos souvenir'
+  password: '%STAN_PASSWORD%'
   key: stan
   profileImage: '20.jpg'
   role: 'deluxe'
   securityQuestion:
     id: 10
-    answer: "Used Ship Emporium" # https://monkeyisland.fandom.com/wiki/Stan_S._Stanman
+    answer: '%STAN_SEC_ANSWER%'
 -
   email: ethereum
   username: evmrox
-  password: 'private'
+  password: '%ETHEREUM_PASSWORD%'
   key: evm
   role: 'deluxe'
   feedback:
@@ -265,9 +293,9 @@
     rating: 1
   securityQuestion:
     id: 10
-    answer: "Used Emporium"
+    answer: '%ETHEREUM_SEC_ANSWER%'
 -
   email: testing
-  password: 'IamUsedForTesting'
+  password: '%TESTING_PASSWORD%'
   key: LetUsTest
   role: 'admin'
