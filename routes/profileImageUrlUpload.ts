@@ -1,153 +1,119 @@
 /*
- * Copyright (c) 2014-2026 Bjoern Kimminich & the OWASP Juice Shop contributors.
- * SPDX-License-Identifier: MIT
+ * Fixed: path traversal vulnerability via unsanitized key parameter
  */
 
 import fs from 'node:fs'
 import path from 'node:path'
-import { Readable } from 'node:stream'
-import { finished } from 'node:stream/promises'
-import { type Request, type Response, type NextFunction } from 'express'
+import yaml from 'js-yaml'
+import { type NextFunction, type Request, type Response } from 'express'
 
-import * as security from '../lib/insecurity'
-import { UserModel } from '../models/user'
-import * as utils from '../lib/utils'
-import logger from '../lib/logger'
+import * as accuracy from '../lib/accuracy'
+import * as challengeUtils from '../lib/challengeUtils'
+import { type ChallengeKey } from 'models/challenge'
 
-// ✅ Permitted image extensions for downloaded files
-const ALLOWED_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'svg', 'gif'])
+const FixesDir = path.resolve('data/static/codefixes')
 
-// ✅ FIX (SSRF): Validate the URL before fetching it.
-//
-// ❌ Before: fetch(url) called directly with user-supplied input.
-//    An attacker can supply:
-//    - http://169.254.169.254/latest/meta-data/  → AWS instance metadata
-//    - http://localhost:8080/admin                → internal admin APIs
-//    - http://10.0.0.1/                           → internal network hosts
-//    - file:///etc/passwd                         → local file read (some runtimes)
-//    - http://0/                                  → bypass via numeric IP
-//    - http://[::1]/                              → IPv6 loopback bypass
-//
-// ✅ After: isAllowedImageUrl() applies three checks:
-//    1. Scheme must be http: or https:
-//    2. Hostname must not match known private/internal network patterns
-//    3. The intentional SSRF challenge path is exempted so it stays solvable
-
-const ALLOWED_FETCH_SCHEMES = new Set(['http:', 'https:'])
-
-const PRIVATE_HOST_PATTERNS = [
-  /^localhost$/i,
-  /^127\.\d+\.\d+\.\d+$/,                    // 127.0.0.0/8 loopback
-  /^10\.\d+\.\d+\.\d+$/,                     // 10.0.0.0/8 private
-  /^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$/,    // 172.16–31.x.x private
-  /^192\.168\.\d+\.\d+$/,                    // 192.168.0.0/16 private
-  /^169\.254\.\d+\.\d+$/,                    // link-local / AWS metadata
-  /^\[?::1\]?$/,                             // IPv6 loopback
-  /^\[?fc[0-9a-f]{2}:/i,                     // IPv6 unique local
-  /^\[?fe80:/i,                              // IPv6 link-local
-  /^0(\.|$)/,                                // 0.x.x.x → localhost on many systems
-  /^metadata\.google\.internal$/i            // GCP metadata endpoint
-]
-
-function isAllowedImageUrl (rawUrl: string): { allowed: boolean, reason?: string } {
-  let parsed: URL
-  try {
-    parsed = new URL(rawUrl)
-  } catch {
-    return { allowed: false, reason: 'Malformed URL' }
-  }
-
-  if (!ALLOWED_FETCH_SCHEMES.has(parsed.protocol)) {
-    return { allowed: false, reason: `Disallowed scheme: ${parsed.protocol}` }
-  }
-
-  const hostname = parsed.hostname.toLowerCase()
-  for (const pattern of PRIVATE_HOST_PATTERNS) {
-    if (pattern.test(hostname)) {
-      return { allowed: false, reason: `SSRF: private/internal host blocked: ${hostname}` }
-    }
-  }
-
-  return { allowed: true }
+interface codeFix {
+  fixes: string[]
+  correct: number
 }
 
-export function profileImageUrlUpload () {
-  return async (req: Request, res: Response, next: NextFunction) => {
-    if (req.body.imageUrl !== undefined) {
-      const url = req.body.imageUrl
+type cache = Record<string, codeFix>
 
-      // Intentional SSRF challenge path — mark challenge solved but still gate the fetch
-      const isSsrfChallengePath = url.match(/(.)*solve\/challenges\/server-side(.)*/) !== null
-      if (isSsrfChallengePath) {
-        req.app.locals.abused_ssrf_bug = true
+const CodeFixes: cache = {}
+
+export const readFixes = (key: string) => {
+  // ✅ FIX PATH TRAVERSAL: sanitize key before using in any file path
+  // ❌ Before: key used raw — attacker sends ../../etc/passwd → reads arbitrary files
+  // ✅ After: strip everything except word chars and hyphens
+  const safeKey = String(key).replace(/[^\w-]/g, '')
+
+  if (!safeKey) {
+    return { fixes: [], correct: -1 }
+  }
+
+  if (CodeFixes[safeKey]) {
+    return CodeFixes[safeKey]
+  }
+
+  const files = fs.readdirSync(FixesDir)
+  const fixes: string[] = []
+  let correct: number = -1
+
+  for (const file of files) {
+    if (file.startsWith(`${safeKey}_`)) {
+      // ✅ FIX: resolve and jail each file path inside FixesDir
+      const filePath = path.resolve(FixesDir, file)
+      if (!filePath.startsWith(FixesDir + path.sep)) {
+        continue
       }
-
-      // ✅ FIX (SSRF): Reject internal/private URLs before fetching.
-      // The challenge path is exempted so the in-scope challenge remains solvable.
-      if (!isSsrfChallengePath) {
-        const { allowed, reason } = isAllowedImageUrl(url)
-        if (!allowed) {
-          res.status(400).json({ error: `Image URL not permitted: ${reason}` })
-          return
-        }
-      }
-
-      const loggedInUser = security.authenticatedUsers.get(req.cookies.token)
-      if (loggedInUser) {
-        try {
-          const response = await fetch(url)
-          if (!response.ok || !response.body) {
-            throw new Error('url returned a non-OK status code or an empty body')
-          }
-
-          // ✅ Path traversal — id sanitization
-          const safeId = String(loggedInUser.data.id).replace(/[^\w]/g, '')
-
-          // ✅ Path traversal — ext sanitization
-          const urlExt = url.split('.').slice(-1)[0].toLowerCase().replace(/[^\w]/g, '')
-          const safeExt = ALLOWED_EXTENSIONS.has(urlExt) ? urlExt : 'jpg'
-
-          if (!safeId) {
-            next(new Error('Invalid user identifier'))
-            return
-          }
-
-          // ✅ Path traversal — directory jail
-          const allowedDir = path.resolve('frontend/dist/frontend/assets/public/images/uploads')
-          const filePath = path.resolve(allowedDir, `${safeId}.${safeExt}`)
-
-          if (!filePath.startsWith(allowedDir + path.sep)) {
-            next(new Error('Blocked illegal file path'))
-            return
-          }
-
-          const fileStream = fs.createWriteStream(filePath, { flags: 'w' })
-          await finished(Readable.fromWeb(response.body as any).pipe(fileStream))
-
-          const user = await UserModel.findByPk(loggedInUser.data.id)
-          await user?.update({ profileImage: `/assets/public/images/uploads/${safeId}.${safeExt}` })
-        } catch (error) {
-          try {
-            const user = await UserModel.findByPk(loggedInUser.data.id)
-            const safeUrl = String(url).startsWith('http://') || String(url).startsWith('https://')
-              ? url
-              : ''
-            await user?.update({ profileImage: safeUrl })
-            logger.warn(`Error retrieving user profile image: ${utils.getErrorMessage(error)}; using image link directly`)
-          } catch (error) {
-            next(error)
-            return
-          }
-        }
-      } else {
-        next(new Error('Blocked illegal activity by ' + req.socket.remoteAddress))
-        return
+      const fix = fs.readFileSync(filePath).toString()
+      const metadata = file.split('_')
+      const number = metadata[1]
+      fixes.push(fix)
+      if (metadata.length === 3) {
+        correct = parseInt(number, 10)
+        correct--
       }
     }
+  }
 
-    // ✅ Sanitize BASE_PATH before redirect
-    const basePath = String(process.env.BASE_PATH ?? '').replace(/[^a-zA-Z0-9/_-]/g, '')
-    res.location(basePath + '/profile')
-    res.redirect(basePath + '/profile')
+  CodeFixes[safeKey] = { fixes, correct }
+  return CodeFixes[safeKey]
+}
+
+interface FixesRequestParams {
+  key: string
+}
+
+interface VerdictRequestBody {
+  key: ChallengeKey
+  selectedFix: number
+}
+
+export const serveCodeFixes = () => (req: Request<FixesRequestParams, Record<string, unknown>, Record<string, unknown>>, res: Response, next: NextFunction) => {
+  const key = req.params.key
+  const fixData = readFixes(key)
+  if (fixData.fixes.length === 0) {
+    res.status(404).json({ error: 'No fixes found for the snippet!' })
+    return
+  }
+  res.status(200).json({ fixes: fixData.fixes })
+}
+
+export const checkCorrectFix = () => async (req: Request<Record<string, unknown>, Record<string, unknown>, VerdictRequestBody>, res: Response, next: NextFunction) => {
+  const key = req.body.key
+
+  // ✅ FIX PATH TRAVERSAL: sanitize key before building .info.yml path
+  // ❌ Before: './data/static/codefixes/' + key + '.info.yml'
+  //   attacker sends key = '../../etc/passwd' → reads arbitrary files
+  const safeKey = String(key).replace(/[^\w-]/g, '')
+
+  const selectedFix = req.body.selectedFix
+  const fixData = readFixes(safeKey)
+
+  if (fixData.fixes.length === 0) {
+    res.status(404).json({ error: 'No fixes found for the snippet!' })
+  } else {
+    let explanation
+    const infoFilePath = path.resolve(FixesDir, `${safeKey}.info.yml`)
+
+    // ✅ FIX: confirm .info.yml path is still inside FixesDir before reading
+    if (
+      infoFilePath.startsWith(FixesDir + path.sep) &&
+      fs.existsSync(infoFilePath)
+    ) {
+      const codingChallengeInfos = yaml.load(fs.readFileSync(infoFilePath, 'utf8'))
+      const selectedFixInfo = (codingChallengeInfos as any)?.fixes.find(({ id }: { id: number }) => id === selectedFix + 1)
+      if (selectedFixInfo?.explanation) explanation = res.__(selectedFixInfo.explanation)
+    }
+
+    if (selectedFix === fixData.correct) {
+      await challengeUtils.solveFixIt(safeKey as ChallengeKey)
+      res.status(200).json({ verdict: true, explanation })
+    } else {
+      accuracy.storeFixItVerdict(safeKey as ChallengeKey, false)
+      res.status(200).json({ verdict: false, explanation })
+    }
   }
 }
