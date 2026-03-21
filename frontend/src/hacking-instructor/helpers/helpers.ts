@@ -5,13 +5,51 @@
 
 import jwtDecode from 'jwt-decode'
 
-let config
-const playbackDelays = {
+let config: any
+const playbackDelays: Record<string, number> = {
   faster: 0.5,
   fast: 0.75,
   normal: 1.0,
   slow: 1.25,
   slower: 1.5
+}
+
+// ✅ FIX: Safe property-chain traversal that blocks prototype pollution.
+//
+// ❌ Before (inline inside waitForInputToHaveValue):
+//   const propertyChain = options.replacement[1].split('.')
+//   let replacementValue = config
+//   for (const property of propertyChain) {
+//     replacementValue = replacementValue[property]   // ← bracket notation with user input
+//   }
+//
+//   If options.replacement[1] is "__proto__.polluted" or "constructor.prototype.x",
+//   the loop walks directly onto Object.prototype, allowing an attacker who controls
+//   the tutorial JSON to inject properties onto every object in the application
+//   (prototype pollution). This can bypass security checks, corrupt state, or
+//   enable further exploitation depending on how polluted properties are consumed.
+//
+// ✅ After: safeGet() validates each segment before accessing it:
+//   1. BLOCKED_KEYS rejects known prototype-access keys outright.
+//   2. Object.prototype.hasOwnProperty.call() ensures we only traverse own
+//      properties, never inherited prototype members.
+//   3. Returns undefined on any violation rather than throwing, so callers
+//      degrade gracefully.
+const BLOCKED_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
+
+function safeGet (obj: any, propertyChain: string[]): any {
+  let current = obj
+  for (const key of propertyChain) {
+    if (BLOCKED_KEYS.has(key)) {
+      console.warn(`Prototype pollution attempt blocked: property key "${key}" is not allowed`)
+      return undefined
+    }
+    if (current === null || current === undefined || !Object.prototype.hasOwnProperty.call(current, key)) {
+      return undefined
+    }
+    current = current[key]
+  }
+  return current
 }
 
 export async function isChallengeSolved (challengeName: string): Promise<boolean> {
@@ -43,12 +81,14 @@ export function waitForInputToHaveValue (inputSelector: string, value: string, o
         const json = await res.json()
         config = json.config
       }
-      const propertyChain = options.replacement[1].split('.')
-      let replacementValue = config
-      for (const property of propertyChain) {
-        replacementValue = replacementValue[property]
+
+      // ✅ FIX: Use safeGet() with explicit BLOCKED_KEYS check instead of
+      //    bare bracket-notation traversal over a user-supplied property path.
+      const propertyChain = String(options.replacement[1]).split('.')
+      const replacementValue = safeGet(config, propertyChain)
+      if (replacementValue !== undefined) {
+        value = value.replace(options.replacement[0], replacementValue)
       }
-      value = value.replace(options.replacement[0], replacementValue)
     }
 
     while (true) {
