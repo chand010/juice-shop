@@ -86,8 +86,21 @@ const getCtfKey = () => {
   }
   return cachedCtfKey
 }
+
 export const ctfFlag = (text: string) => {
-  const shaObj = new jsSHA('SHA-1', 'TEXT') // eslint-disable-line new-cap
+  // ✅ FIX: Replace SHA-1 with SHA-256 for HMAC generation.
+  // ❌ Before: new jsSHA('SHA-1', 'TEXT')
+  //    SHA-1 is cryptographically broken — practical collision attacks exist
+  //    (SHAttered, 2017). For an HMAC used as a CTF flag, a weak hash means
+  //    flags could potentially be forged or pre-computed by an attacker who
+  //    knows the CTF key, undermining the integrity of the competition.
+  // ✅ After: SHA-256 has no known practical collision attacks and is the
+  //    current standard for HMAC constructions (HMAC-SHA-256).
+  //
+  // ⚠️  Note: changing the hash algorithm will invalidate any CTF flags that
+  //    were previously issued. Re-generate all active flag values after
+  //    deploying this change.
+  const shaObj = new jsSHA('SHA-256', 'TEXT') // eslint-disable-line new-cap
   shaObj.setHMACKey(getCtfKey(), 'TEXT')
   shaObj.update(text)
   return shaObj.getHMAC('HEX')
@@ -189,6 +202,7 @@ export function getChallengeEnablementStatus (challenge: Challenge,
 
   return { enabled: true, disabledBecause: null }
 }
+
 export function isChallengeEnabled (challenge: Challenge): boolean {
   const { enabled } = getChallengeEnablementStatus(challenge)
   return enabled
