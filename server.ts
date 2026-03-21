@@ -165,6 +165,52 @@ void collectDurationPromise('validatePreconditions', validatePreconditions)()
 void collectDurationPromise('cleanupFtpFolder', cleanupFtpFolder)()
 void collectDurationPromise('validateConfig', validateConfig)({})
 
+// ✅ FIX: Restrictive CORS policy — explicit origin allowlist instead of wildcard.
+// ❌ Before:
+//   app.options('*', cors())   // preflight allowed from any origin
+//   app.use(cors())            // all origins, all methods, credentials included
+//
+//   This meant any malicious website could make credentialed cross-origin
+//   requests to the API, silently reading user data (CSRF, data theft).
+//
+// ✅ After:
+//   - Only origins listed in CORS_ALLOWED_ORIGINS (or the configured baseUrl)
+//     receive the Access-Control-Allow-Origin header.
+//   - Unknown origins receive no CORS header → browser blocks the response.
+//   - Allowed methods and headers are explicitly enumerated.
+//   - credentials: true is only safe because the origin list is not '*'.
+//
+// Set the CORS_ALLOWED_ORIGINS env var to a comma-separated list of trusted
+// origins, e.g. "https://app.example.com,https://admin.example.com".
+// Falls back to the configured server.baseUrl for single-origin deployments.
+const rawAllowedOrigins = process.env.CORS_ALLOWED_ORIGINS
+  ?? config.get<string>('server.baseUrl')
+
+const allowedOrigins = new Set(
+  rawAllowedOrigins
+    .split(',')
+    .map((o: string) => o.trim())
+    .filter(Boolean)
+)
+
+const corsOptions: cors.CorsOptions = {
+  origin (requestOrigin, callback) {
+    // Allow non-browser requests (no Origin header: curl, server-to-server)
+    if (requestOrigin === undefined) {
+      callback(null, true)
+      return
+    }
+    if (allowedOrigins.has(requestOrigin)) {
+      callback(null, true)
+    } else {
+      callback(new Error(`CORS: origin '${requestOrigin}' is not allowed`))
+    }
+  },
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-User-Email'],
+  credentials: true  // safe only because origin is not '*'
+}
+
 // Function called first to ensure that all the i18n files are reloaded successfully before other linked operations.
 restoreOverwrittenFilesWithOriginals().then(() => {
   /* Locals */
@@ -177,9 +223,9 @@ restoreOverwrittenFilesWithOriginals().then(() => {
   /* Compression for all requests */
   app.use(compression())
 
-  /* Bludgeon solution for possible CORS problems: Allow everything! */
-  app.options('*', cors())
-  app.use(cors())
+  /* Restrictive CORS — explicit allowlist replaces the former wildcard */
+  app.options('*', cors(corsOptions))
+  app.use(cors(corsOptions))
 
   /* Security middleware */
   app.use(helmet.noSniff())
