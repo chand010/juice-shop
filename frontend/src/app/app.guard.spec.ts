@@ -10,6 +10,24 @@ import { RouterTestingModule } from '@angular/router/testing'
 import { ErrorPageComponent } from './error-page/error-page.component'
 import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http'
 
+// ✅ FIX: Build a test JWT dynamically instead of embedding a real token.
+// ❌ Before: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOi...<real JWT>'
+//    Hardcoded JWTs in source code can expose real credentials if the token
+//    was accidentally generated with a production secret.
+// ✅ After: construct a structurally valid JWT from known test data so the
+//    token decode logic can be exercised without any real secret material.
+function buildTestJwt (payload: object): string {
+  const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
+    .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
+  const body = btoa(JSON.stringify(payload))
+    .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
+  const fakeSignature = 'TESTSIGNATURE' // not cryptographically valid — intentional for unit tests
+  return `${header}.${body}.${fakeSignature}`
+}
+
+const TEST_JWT_PAYLOAD = { sub: '1234567890', name: 'John Doe', iat: 1516239022 }
+const TEST_JWT = buildTestJwt(TEST_JWT_PAYLOAD)
+
 describe('LoginGuard', () => {
   beforeEach(() => {
     TestBed.configureTestingModule({
@@ -35,12 +53,8 @@ describe('LoginGuard', () => {
   }))
 
   it('returns payload from decoding a valid JWT', inject([LoginGuard], (guard: LoginGuard) => {
-    localStorage.setItem('token', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c')
-    expect(guard.tokenDecode()).toEqual({
-      sub: '1234567890',
-      name: 'John Doe',
-      iat: 1516239022
-    })
+    localStorage.setItem('token', TEST_JWT)
+    expect(guard.tokenDecode()).toEqual(TEST_JWT_PAYLOAD)
   }))
 
   it('returns nothing when decoding an invalid JWT', inject([LoginGuard], (guard: LoginGuard) => {
