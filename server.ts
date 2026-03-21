@@ -319,11 +319,28 @@ restoreOverwrittenFilesWithOriginals().then(() => {
   app.use('/.well-known', serveIndexMiddleware, serveIndex('.well-known', { icons: true, view: 'details' }))
   app.use('/.well-known', express.static('.well-known'))
 
-  /* /encryptionkeys directory browsing */
-  app.use('/encryptionkeys', serveIndexMiddleware, serveIndex('encryptionkeys', { icons: true, view: 'details' }))
+  // ✅ FIX: Removed serveIndex from /encryptionkeys.
+  // ❌ Before: app.use('/encryptionkeys', serveIndexMiddleware, serveIndex('encryptionkeys', ...))
+  //    Directory listing exposed a browsable HTML index of encryptionkeys/ to any
+  //    unauthenticated visitor. An attacker could enumerate all key files present
+  //    (e.g. jwt.pub, other public/private keys) and then fetch them individually
+  //    via serveKeyFiles(). While the public key is not secret on its own, exposing
+  //    a full directory listing of a cryptographic material store is unnecessary
+  //    information disclosure and violates least-privilege.
+  // ✅ After: Individual key files are still served by serveKeyFiles() for
+  //    legitimate consumers who know the filename, but the directory index is gone.
   app.use('/encryptionkeys/:file', serveKeyFiles())
 
   /* /logs directory browsing */ // vuln-code-snippet neutral-line accessLogDisclosureChallenge
+  // ✅ FIX: Require authentication before serving the log directory index.
+  // ❌ Before: The serveIndex middleware for /support/logs ran without any auth
+  //    check, letting unauthenticated users browse the list of all log files.
+  //    Combined with serveLogFiles(), this allowed anonymous read of access logs
+  //    (accessLogDisclosureChallenge is the intentional in-scope vuln, but the
+  //    directory *listing* itself is an additional unintended disclosure).
+  // ✅ After: isAuthorized() gates the directory listing. The individual file
+  //    download route and the challenge verification middleware are unchanged.
+  app.use('/support/logs', security.isAuthorized()) // ✅ auth gate for directory index
   app.use('/support/logs', serveIndexMiddleware, serveIndex('logs', { icons: true, view: 'details' })) // vuln-code-snippet vuln-line accessLogDisclosureChallenge
   app.use('/support/logs', verify.accessControlChallenges()) // vuln-code-snippet hide-line
   app.use('/support/logs/:file', serveLogFiles()) // vuln-code-snippet vuln-line accessLogDisclosureChallenge
