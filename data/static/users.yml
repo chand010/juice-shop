@@ -148,7 +148,6 @@
   email: wurstbrot
   username: wurstbrot
   password: 'EinBelegtesBrotMitSchinkenSCHINKEN!'
-  
   key: timo
   role: 'admin'
   securityQuestion:
