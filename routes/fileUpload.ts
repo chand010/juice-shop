@@ -7,16 +7,13 @@ import os from 'node:os'
 import fs from 'node:fs'
 import path from 'node:path'
 import yaml from 'js-yaml'
+import unzipper from 'unzipper'
+import { DOMParser } from '@xmldom/xmldom'
 import { type NextFunction, type Request, type Response } from 'express'
 
-// ✅ FIX: removed vm import — no code execution needed
-// import vm from 'node:vm'
+// ✅ Removed: import vm from 'node:vm'       — no code execution needed
+// ✅ Removed: import libxml from 'libxmljs2' — XXE-prone, replaced with @xmldom/xmldom
 
-// ✅ FIX: replaced libxmljs2 (XXE-prone) with defusedxml equivalent
-// Use @xmldom/xmldom which does not process external entities
-import { DOMParser } from '@xmldom/xmldom'
-
-import unzipper from 'unzipper'
 import * as challengeUtils from '../lib/challengeUtils'
 import { challenges } from '../data/datacache'
 import * as utils from '../lib/utils'
@@ -45,17 +42,15 @@ function handleZipFileUpload ({ file }: Request, res: Response, next: NextFuncti
               .on('entry', function (entry: any) {
                 const fileName = entry.path
 
-                // ✅ FIX: path traversal — strip directory components and
-                // jail to uploads/complaints/ using basename + realpath check
+                // ✅ FIX PATH TRAVERSAL: basename + directory jail
+                // ❌ Before: path.resolve('uploads/complaints/' + fileName)
+                //   attacker puts ../../ftp/legal.md in zip → writes outside allowed dir
                 const safeFileName = path.basename(fileName)
-                const absolutePath = path.resolve('uploads/complaints/', safeFileName)
                 const allowedDir = path.resolve('uploads/complaints')
+                const absolutePath = path.resolve(allowedDir, safeFileName)
 
                 challengeUtils.solveIf(challenges.fileWriteChallenge, () => { return absolutePath === path.resolve('ftp/legal.md') })
 
-                // ❌ Before: path.resolve('uploads/complaints/' + fileName)
-                //   attacker could send ../../ftp/legal.md inside zip → write anywhere
-                // ✅ After: basename strips all directory traversal, realpath check confirms jail
                 if (absolutePath.startsWith(allowedDir + path.sep)) {
                   entry.pipe(fs.createWriteStream(absolutePath).on('error', function (err) { next(err) }))
                 } else {
@@ -93,13 +88,10 @@ function handleXmlUpload ({ file }: Request, res: Response, next: NextFunction) 
     if (((file?.buffer) != null) && utils.isChallengeEnabled(challenges.deprecatedInterfaceChallenge)) {
       const data = file.buffer.toString()
       try {
-        // ✅ FIX XXE: replaced libxmljs2 with @xmldom/xmldom
-        // ❌ Before: libxml.parseXml(data, { noent: true })
-        //   noent: true processes external entities → attacker sends:
-        //   <!DOCTYPE x [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><x>&xxe;</x>
-        //   → reads arbitrary files from server filesystem
-        // ✅ After: @xmldom/xmldom does not process external entities by default
-        // ✅ FIX vm: removed vm.runInContext wrapper — direct call is safe here
+        // ✅ FIX XXE: @xmldom/xmldom never processes external entities
+        // ❌ Before: libxml.parseXml(data, { noent: true }) via vm.runInContext
+        //   noent:true resolves &xxe; → reads /etc/passwd via external entity
+        // ✅ FIX vm: removed vm.createContext/runInContext entirely
         const parser = new DOMParser()
         const xmlDoc = parser.parseFromString(data, 'text/xml')
         const xmlString = xmlDoc.toString()
@@ -126,10 +118,10 @@ function handleYamlUpload ({ file }: Request, res: Response, next: NextFunction)
     if (((file?.buffer) != null) && utils.isChallengeEnabled(challenges.deprecatedInterfaceChallenge)) {
       const data = file.buffer.toString()
       try {
-        // ✅ FIX 1: replaced yaml.load (unsafe — executes JS tags) with yaml.safeLoad
-        // ❌ Before: yaml.load(data) → attacker sends !!js/function to execute code
-        // ✅ After: yaml.load with FAILSAFE_SCHEMA — only strings, no JS execution
-        // ✅ FIX 2: removed vm.runInContext wrapper — no sandbox needed
+        // ✅ FIX YAML RCE: FAILSAFE_SCHEMA blocks !!js/function execution
+        // ❌ Before: yaml.load(data) via vm.runInContext
+        //   attacker sends !!js/function tag → arbitrary code execution
+        // ✅ FIX vm: removed vm.createContext/runInContext entirely
         const parsed = yaml.load(data, { schema: yaml.FAILSAFE_SCHEMA })
         const yamlString = JSON.stringify(parsed)
 
