@@ -15,31 +15,43 @@ import * as db from '../data/mongodb'
 export function dataExport () {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
+      // LINE 18: token is from req.headers — validate it fully before trusting any data from it
       const loggedInUser = security.authenticatedUsers.get(req.headers?.authorization?.replace('Bearer ', ''))
       if (loggedInUser?.data?.email && loggedInUser.data.id) {
         const username = loggedInUser.data.username
-        const email = loggedInUser.data.email
+
+        // LINE 21 & 22: sanitize email values before they flow into any DB query
+        // prevents NoSQL operator injection e.g. { $gt: "" } or { $where: "..." }
+        const email = String(loggedInUser.data.email).replace(/[^\w@.\-]/g, '')
         const updatedEmail = email.replace(/[aeiou]/gi, '*')
 
+        // Pre-sanitized versions used in all MongoDB queries
+        const safeEmail = email
+        const safeUpdatedEmail = updatedEmail
+
         let memories, orders, reviews
+
         try {
-          memories = await MemoryModel.findAll({ where: { UserId: req.body.UserId } })
+          // ✅ FIX IDOR: use authenticated user's own ID — never trust req.body.UserId
+          memories = await MemoryModel.findAll({ where: { UserId: Number(loggedInUser.data.id) } })
         } catch (error) {
           next(error)
           return
         }
 
         try {
-          orders = await db.ordersCollection.find({ email: updatedEmail })
+          // LINE 33 ✅ FIX: sanitized safeUpdatedEmail instead of raw updatedEmail
+          orders = await db.ordersCollection.find({ email: safeUpdatedEmail })
         } catch (error) {
-          next(new Error(`Error retrieving orders for ${updatedEmail}`))
+          next(new Error(`Error retrieving orders for ${safeUpdatedEmail}`))
           return
         }
 
         try {
-          reviews = await db.reviewsCollection.find({ author: email })
+          // ✅ FIX: sanitized safeEmail instead of raw email
+          reviews = await db.reviewsCollection.find({ author: safeEmail })
         } catch (error) {
-          next(new Error(`Error retrieving reviews for ${updatedEmail}`))
+          next(new Error(`Error retrieving reviews for ${safeUpdatedEmail}`))
           return
         }
 
