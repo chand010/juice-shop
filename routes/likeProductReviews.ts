@@ -15,18 +15,23 @@ const sleep = async (ms: number) => await new Promise(resolve => setTimeout(reso
 
 export function likeProductReviews () {
   return async (req: Request, res: Response, next: NextFunction) => {
-    const id = req.body.id
+    // ✅ FIX LINE 18: sanitize id — prevents NoSQL operator injection
+    // e.g. attacker sending { "$gt": "" } as id would match all documents
+    const id = String(req.body.id).replace(/[^\w]/g, '')
+
     const user = security.authenticatedUsers.from(req)
     if (!user) {
       return res.status(401).json({ error: 'Unauthorized' })
     }
 
     try {
+      // ✅ FIX LINE 25: id is now sanitized before findOne
       const review = await db.reviewsCollection.findOne({ _id: id })
       if (!review) {
         return res.status(404).json({ error: 'Not found' })
       }
 
+      // ✅ FIX LINE 36: id is now sanitized before update
       const likedBy = review.likedBy
       if (likedBy.includes(user.data.email)) {
         return res.status(403).json({ error: 'Not allowed' })
@@ -39,7 +44,9 @@ export function likeProductReviews () {
 
       // Artificial wait for timing attack challenge
       await sleep(150)
+
       try {
+        // ✅ FIX LINE 43: id is now sanitized before second findOne
         const updatedReview: Review = await db.reviewsCollection.findOne({ _id: id })
         const updatedLikedBy = updatedReview.likedBy
         updatedLikedBy.push(user.data.email)
