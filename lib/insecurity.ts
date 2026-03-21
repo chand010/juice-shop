@@ -21,30 +21,17 @@ import * as z85 from 'z85'
 
 export const publicKey = fs ? fs.readFileSync('encryptionkeys/jwt.pub', 'utf8') : 'placeholder-public-key'
 
-// ✅ FIX: Load the RSA private key and HMAC secret from environment variables
-//    instead of hardcoding them in source.
-// ❌ Before: privateKey was a literal RSA PEM string embedded in code —
-//    anyone with read access to the repo (including git history) could sign
-//    arbitrary JWTs as any user, forge deluxe tokens, etc.
-// ❌ Before: the HMAC key 'pa4qacea4VK9t9nGv7yZtwmj' was also hardcoded,
-//    allowing offline HMAC forgery once the key was extracted.
-//
-// Required environment variables:
-//   JWT_PRIVATE_KEY   — PEM-encoded RSA private key (newlines as \n or literal)
-//   HMAC_SECRET       — random high-entropy string for HMAC operations
-//
-// Example .env (never commit this file):
-//   JWT_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"
-//   HMAC_SECRET="<32+ random bytes, base64 or hex encoded>"
+// ✅ FIX (hardcoded secrets): Load RSA private key and HMAC secret from
+// environment variables. Set in .env (never commit) or a secrets manager.
+// Required env vars:
+//   JWT_PRIVATE_KEY  — PEM-encoded RSA private key (\n or literal newlines)
+//   HMAC_SECRET      — high-entropy random string for HMAC operations
 function requireEnv (name: string): string {
   const value = process.env[name]
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${name}`)
-  }
+  if (!value) throw new Error(`Missing required environment variable: ${name}`)
   return value
 }
 
-// Replace escaped \n sequences that may come from a .env file
 const privateKey = requireEnv('JWT_PRIVATE_KEY').replace(/\\n/g, '\n')
 const hmacSecret = requireEnv('HMAC_SECRET')
 
@@ -67,7 +54,6 @@ interface IAuthenticatedUsers {
 }
 
 export const hash = (data: string) => crypto.createHash('md5').update(data).digest('hex')
-// ✅ FIX: Use hmacSecret from env instead of hardcoded 'pa4qacea4VK9t9nGv7yZtwmj'
 export const hmac = (data: string) => crypto.createHmac('sha256', hmacSecret).update(data).digest('hex')
 
 export const cutOffPoisonNullByte = (str: string) => {
@@ -176,7 +162,6 @@ export const roles = {
 }
 
 export const deluxeToken = (email: string) => {
-  // ✅ FIX: uses privateKey loaded from env — not the hardcoded literal
   const hmacInstance = crypto.createHmac('sha256', privateKey)
   return hmacInstance.update(email + roles.deluxe).digest('hex')
 }
@@ -220,7 +205,23 @@ export const updateAuthenticatedUsers = () => (req: Request, res: Response, next
       if (err === null) {
         if (authenticatedUsers.get(token) === undefined) {
           authenticatedUsers.put(token, decoded)
-          res.cookie('token', token)
+          // ✅ FIX (session fixation): Do NOT echo the user-supplied token back
+          // as a Set-Cookie response header.
+          //
+          // ❌ Before: res.cookie('token', token)
+          //    `token` originates from req.cookies.token or the Authorization
+          //    header — both fully attacker-controlled. An attacker who can
+          //    make a victim's browser send a known token value can then call
+          //    this endpoint to have the server legitimise that token via
+          //    Set-Cookie, fixing the victim's session to the known value
+          //    (session fixation). In edge cases this also enables XSS via
+          //    cookie injection if the value is not properly encoded.
+          //
+          // ✅ After: the cookie is intentionally not set here. Tokens are
+          //    issued exclusively by authorize() at login time; the login
+          //    route is responsible for setting the cookie from the freshly
+          //    signed server-side value, not from a value supplied in the
+          //    incoming request.
         }
       }
     })
