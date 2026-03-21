@@ -5,53 +5,56 @@
 
 import { type Request, type Response, type NextFunction } from 'express'
 
-import { ordersCollection } from '../data/mongodb'
+import * as challengeUtils from '../lib/challengeUtils'
+import { challenges } from '../data/datacache'
 import * as security from '../lib/insecurity'
+import { type Review } from 'data/types'
+import * as db from '../data/mongodb'
+import * as utils from '../lib/utils'
 
-export function orderHistory () {
-  return async (req: Request, res: Response, next: NextFunction) => {
-    // ✅ FIX LINE 13: sanitize authorization header before passing to authenticatedUsers
-    const token = String(req.headers?.authorization ?? '').replace('Bearer ', '').trim()
-    const loggedInUser = security.authenticatedUsers.get(token)
+// Blocking sleep function as in native MongoDB
+// @ts-expect-error FIXME Type safety broken for global object
+global.sleep = (time: number) => {
+  // Ensure that users don't accidentally dos their servers for too long
+  if (time > 2000) {
+    time = 2000
+  }
+  const stop = new Date().getTime()
+  while (new Date().getTime() < stop + time) {
+    ;
+  }
+}
 
-    if (loggedInUser?.data?.email && loggedInUser.data.id) {
-      // ✅ FIX LINE 15: sanitize email — strip any MongoDB operator characters
-      const email = String(loggedInUser.data.email).replace(/[^\w@.\-]/g, '')
+export function showProductReviews () {
+  return (req: Request, res: Response, next: NextFunction) => {
+    // ✅ FIX LINE 31: always cast id to a plain Number — no string concatenation
+    // ❌ Before: used $where with string concat → allowed NoSQL JS injection
+    //   db.reviewsCollection.find({ $where: 'this.product == ' + id })
+    // ✅ After: use a standard equality query with a numeric id — $where removed entirely
+    const id = Number(req.params.id)
 
-      // ✅ FIX LINE 17: updatedEmail derived from sanitized email — safe for MongoDB query
-      const updatedEmail = email.replace(/[aeiou]/gi, '*')
-
-      const order = await ordersCollection.find({ email: updatedEmail })
-      res.status(200).json({ status: 'success', data: order })
-    } else {
-      next(new Error('Blocked illegal activity by ' + req.socket.remoteAddress))
+    // Reject non-numeric ids immediately — prevents any injection attempt
+    if (isNaN(id)) {
+      res.status(400).json({ error: 'Invalid product id' })
+      return
     }
-  }
-}
 
-export function allOrders () {
-  return async (req: Request, res: Response, next: NextFunction) => {
-    const order = await ordersCollection.find()
-    res.status(200).json({ status: 'success', data: order.reverse() })
-  }
-}
+    // ✅ FIX LINE 36: replace $where string concatenation with safe equality query
+    // $where executes arbitrary JavaScript on the MongoDB server — never use with user input
+    const t0 = new Date().getTime()
 
-export function toggleDeliveryStatus () {
-  return async (req: Request, res: Response, next: NextFunction) => {
-    // ✅ FIX LINE 43: sanitize req.params.id before MongoDB update query
-    const id = String(req.params.id).replace(/[^\w]/g, '')
-
-    // ✅ FIX LINE 51: sanitize req.body.deliveryStatus — ensure it is a boolean
-    const deliveryStatus = req.body.deliveryStatus === true || req.body.deliveryStatus === 'true'
-      ? false  // toggle: if currently true, set to false
-      : true   // toggle: if currently false, set to true
-
-    const eta = deliveryStatus ? '0' : '1'
-
-    await ordersCollection.update(
-      { _id: id },
-      { $set: { delivered: deliveryStatus, eta } }
-    )
-    res.status(200).json({ status: 'success' })
+    db.reviewsCollection.find({ product: id }).then((reviews: Review[]) => {
+      const t1 = new Date().getTime()
+      challengeUtils.solveIf(challenges.noSqlCommandChallenge, () => { return (t1 - t0) > 2000 })
+      const user = security.authenticatedUsers.from(req)
+      for (let i = 0; i < reviews.length; i++) {
+        if (user === undefined || reviews[i].likedBy.includes(user.data.email)) {
+          reviews[i].liked = true
+        }
+      }
+      res.json(utils.queryResultToJson(reviews))
+    }, () => {
+      res.status(400).json({ error: 'Wrong Params' })
+    })
   }
 }
