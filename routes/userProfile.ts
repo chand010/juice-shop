@@ -50,28 +50,26 @@ export function getUserProfile () {
       return
     }
 
+    // ✅ FIX 1: Remove eval() — RCE via username
+    // ❌ Before: if username matches #{...}, extract code and call eval(code)
+    //   attacker sets username to #{process.mainModule.require('child_process').execSync('whoami')}
+    //   → arbitrary command execution on the server
+    // ✅ After: never execute username as code — always escape it
     let username = user.username
+    username = '\\' + (username ?? '')
 
-    if (username?.match(/#{(.*)}/) !== null && utils.isChallengeEnabled(challenges.usernameXssChallenge)) {
-      req.app.locals.abused_ssti_bug = true
-      const code = username?.substring(2, username.length - 1)
-      try {
-        if (!code) {
-          throw new Error('Username is null')
-        }
-        username = eval(code) // eslint-disable-line no-eval
-      } catch (err) {
-        username = '\\' + username
-      }
-    } else {
-      username = '\\' + username
-    }
+    // ✅ FIX 2: encode username before injecting into pug template — prevents SSTI
+    // ❌ Before: template.replace(/_username_/g, username) — raw username in pug template
+    //   attacker sets username to: #{root.process.mainModule.require('child_process').execSync('id')}
+    //   → pug evaluates it as JS during pug.compile(template) → RCE
+    // ✅ After: HTML-encode username so pug treats it as plain text, never as code
+    const safeUsername = username ? entities.encode(username) : ''
 
     const themeKey = config.get<string>('application.theme') as keyof typeof themes
     const theme = themes[themeKey] || themes['bluegrey-lightgreen']
 
-    if (username) {
-      template = template.replace(/_username_/g, username)
+    if (safeUsername) {
+      template = template.replace(/_username_/g, safeUsername)
     }
     template = template.replace(/_emailHash_/g, security.hash(user?.email))
     template = template.replace(/_title_/g, entities.encode(config.get<string>('application.name')))
@@ -85,7 +83,14 @@ export function getUserProfile () {
 
     try {
       const fn = pug.compile(template)
-      const CSP = `img-src 'self' ${user?.profileImage}; script-src 'self' 'unsafe-eval'`
+
+      // ✅ FIX 3: CSP header injection via profileImage
+      // ❌ Before: CSP = `img-src 'self' ${user?.profileImage}; script-src ...`
+      //   attacker sets profileImage to: x; script-src 'unsafe-inline'
+      //   → injects their own CSP directives, bypassing script-src restrictions
+      // ✅ After: extract only the filename/URL, strip any semicolons or CSP metacharacters
+      const safeProfileImage = (user?.profileImage ?? '').replace(/[;'"\\]/g, '')
+      const CSP = `img-src 'self' ${safeProfileImage}; script-src 'self' 'unsafe-eval'`
 
       challengeUtils.solveIf(challenges.usernameXssChallenge, () => {
         return username && user?.profileImage.match(/;[ ]*script-src(.)*'unsafe-inline'/g) !== null && utils.contains(username, '<script>alert(`xss`)</script>')
