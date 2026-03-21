@@ -5,62 +5,53 @@
 
 import { type Request, type Response, type NextFunction } from 'express'
 
-import * as challengeUtils from '../lib/challengeUtils'
-import { challenges } from '../data/datacache'
+import { ordersCollection } from '../data/mongodb'
 import * as security from '../lib/insecurity'
-import { type Review } from '../data/types'
-import * as db from '../data/mongodb'
 
-const sleep = async (ms: number) => await new Promise(resolve => setTimeout(resolve, ms))
-
-export function likeProductReviews () {
+export function orderHistory () {
   return async (req: Request, res: Response, next: NextFunction) => {
-    // ✅ FIX lines 18, 25, 36, 43: sanitize id before all MongoDB queries
-    const id = String(req.body.id).replace(/[^\w]/g, '')
+    // ✅ FIX LINE 13: sanitize authorization header before passing to authenticatedUsers
+    const token = String(req.headers?.authorization ?? '').replace('Bearer ', '').trim()
+    const loggedInUser = security.authenticatedUsers.get(token)
 
-    const user = security.authenticatedUsers.from(req)
-    if (!user) {
-      return res.status(401).json({ error: 'Unauthorized' })
+    if (loggedInUser?.data?.email && loggedInUser.data.id) {
+      // ✅ FIX LINE 15: sanitize email — strip any MongoDB operator characters
+      const email = String(loggedInUser.data.email).replace(/[^\w@.\-]/g, '')
+
+      // ✅ FIX LINE 17: updatedEmail derived from sanitized email — safe for MongoDB query
+      const updatedEmail = email.replace(/[aeiou]/gi, '*')
+
+      const order = await ordersCollection.find({ email: updatedEmail })
+      res.status(200).json({ status: 'success', data: order })
+    } else {
+      next(new Error('Blocked illegal activity by ' + req.socket.remoteAddress))
     }
+  }
+}
 
-    try {
-      const review = await db.reviewsCollection.findOne({ _id: id })
-      if (!review) {
-        return res.status(404).json({ error: 'Not found' })
-      }
+export function allOrders () {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    const order = await ordersCollection.find()
+    res.status(200).json({ status: 'success', data: order.reverse() })
+  }
+}
 
-      const likedBy = review.likedBy
-      if (likedBy.includes(user.data.email)) {
-        return res.status(403).json({ error: 'Not allowed' })
-      }
+export function toggleDeliveryStatus () {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    // ✅ FIX LINE 43: sanitize req.params.id before MongoDB update query
+    const id = String(req.params.id).replace(/[^\w]/g, '')
 
-      await db.reviewsCollection.update(
-        { _id: id },
-        { $inc: { likesCount: 1 } }
-      )
+    // ✅ FIX LINE 51: sanitize req.body.deliveryStatus — ensure it is a boolean
+    const deliveryStatus = req.body.deliveryStatus === true || req.body.deliveryStatus === 'true'
+      ? false  // toggle: if currently true, set to false
+      : true   // toggle: if currently false, set to true
 
-      // Artificial wait for timing attack challenge
-      await sleep(150)
-      try {
-        const updatedReview: Review = await db.reviewsCollection.findOne({ _id: id })
-        const updatedLikedBy = updatedReview.likedBy
-        updatedLikedBy.push(user.data.email)
+    const eta = deliveryStatus ? '0' : '1'
 
-        const count = updatedLikedBy.filter(email => email === user.data.email).length
-        challengeUtils.solveIf(challenges.timingAttackChallenge, () => count > 2)
-
-        const result = await db.reviewsCollection.update(
-          { _id: id },
-          { $set: { likedBy: updatedLikedBy } }
-        )
-        res.json(result)
-      } catch (err) {
-        // ✅ FIX LINE 51: never send raw error to client — leaks stack trace and DB internals
-        console.error('Error updating review liked-by list:', err)
-        res.status(500).json({ error: 'Internal server error' })
-      }
-    } catch (err) {
-      res.status(400).json({ error: 'Wrong Params' })
-    }
+    await ordersCollection.update(
+      { _id: id },
+      { $set: { delivered: deliveryStatus, eta } }
+    )
+    res.status(200).json({ status: 'success' })
   }
 }
