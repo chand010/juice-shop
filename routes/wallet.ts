@@ -9,7 +9,7 @@ import { CardModel } from '../models/card'
 
 export function getWalletBalance () {
   return async (req: Request, res: Response, next: NextFunction) => {
-    const wallet = await WalletModel.findOne({ where: { UserId: req.body.UserId } })
+    const wallet = await WalletModel.findOne({ where: { UserId: Number(req.body.UserId) } })
     if (wallet != null) {
       res.status(200).json({ status: 'success', data: wallet.balance })
     } else {
