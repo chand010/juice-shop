@@ -57,7 +57,10 @@ export class AdministrationComponent implements OnInit {
         this.userDataSource = users
         this.userDataSourceHidden = users
         for (const user of this.userDataSource) {
-          user.email = this.sanitizer.bypassSecurityTrustHtml(`<span class="${this.doesUserHaveAnActiveSession(user) ? 'confirmation' : 'error'}">${user.email}</span>`)
+         <!-- In your .html file -->
+<span [ngClass]="user.isActive ? 'confirmation' : 'error'">
+  {{ user.email }}
+</span>
         }
         this.userDataSource = new MatTableDataSource(this.userDataSource)
         this.userDataSource.paginator = this.paginatorUsers
