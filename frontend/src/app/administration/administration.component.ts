@@ -76,14 +76,11 @@ export class AdministrationComponent implements OnInit {
   findAllFeedbacks () {
     this.feedbackService.find().subscribe({
       next: (feedbacks) => {
-        this.feedbackDataSource = feedbacks
-        for (const feedback of this.feedbackDataSource) {
-          feedback.comment = this.sanitizer.bypassSecurityTrustHtml(feedback.comment)
-        }
-        this.feedbackDataSource = new MatTableDataSource(this.feedbackDataSource)
-        this.feedbackDataSource.paginator = this.paginatorFeedb
-        this.resultsLengthFeedback = feedbacks.length
-      },
+  // Just pass the raw data; Angular will protect it automatically
+  this.feedbackDataSource = new MatTableDataSource(feedbacks)
+  this.feedbackDataSource.paginator = this.paginatorFeedb
+  this.resultsLengthFeedback = feedbacks.length
+},
       error: (err) => {
         this.error = err
         console.log(this.error)
@@ -119,10 +116,12 @@ export class AdministrationComponent implements OnInit {
       }
     })
   }
-
+    
   times (numberOfTimes: number) {
-    return Array(numberOfTimes).fill('★')
-  }
+  // Ensure the number is valid and positive to prevent crashes
+  const count = Math.max(0, Math.floor(numberOfTimes || 0));
+  return Array(count).fill('★');
+}
 
   doesUserHaveAnActiveSession (user: { email: string, lastLoginTime: number }) {
     const SIX_HOURS_IN_SECONDS = 60 * 60 * 6
