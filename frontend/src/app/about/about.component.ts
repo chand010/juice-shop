@@ -71,36 +71,23 @@ export class AboutComponent implements OnInit {
           console.error(err)
           return EMPTY
         })
-      ).subscribe((config) => {
-        if (config?.application?.social) {
-          if (config.application.social.blueSkyUrl) {
-            this.blueSkyUrl = config.application.social.blueSkyUrl
-          }
-          if (config.application.social.mastodonUrl) {
-            this.mastodonUrl = config.application.social.mastodonUrl
-          }
-          if (config.application.social.twitterUrl) {
-            this.twitterUrl = config.application.social.twitterUrl
-          }
-          if (config.application.social.facebookUrl) {
-            this.facebookUrl = config.application.social.facebookUrl
-          }
-          if (config.application.social.slackUrl) {
-            this.slackUrl = config.application.social.slackUrl
-          }
-          if (config.application.social.redditUrl) {
-            this.redditUrl = config.application.social.redditUrl
-          }
-          if (config.application.social.pressKitUrl) {
-            this.pressKitUrl = config.application.social.pressKitUrl
-          }
-          if (config.application.social.nftUrl) {
-            this.nftUrl = config.application.social.nftUrl
-          }
-        }
-      })
-  }
+ ).subscribe((config) => {
+  const social = config?.application?.social;
+  if (!social) return; // Guard clause: Exit early if no social config exists
 
+  // List of fields to update
+  const platforms = [
+    'blueSkyUrl', 'mastodonUrl', 'twitterUrl', 'facebookUrl', 
+    'slackUrl', 'redditUrl', 'pressKitUrl', 'nftUrl'
+  ];
+
+  // Update values only if they exist in the config
+  platforms.forEach(key => {
+    if (social[key]) {
+      this[key] = social[key];
+    }
+  });
+});
   populateSlideshowFromFeedbacks () {
     this.feedbackService
       .find()
@@ -113,18 +100,16 @@ export class AboutComponent implements OnInit {
       .subscribe((feedbacks) => {
         for (let i = 0; i < feedbacks.length; i++) {
 
-          feedbacks[i].comment = `<figcaption><p class="feedback-comment">${
-            feedbacks[i].comment
-          }</p><div class="feedback-stars">(${this.stars[feedbacks[i].rating]})</div></figcaption>`
-          feedbacks[i].comment = this.sanitizer.bypassSecurityTrustHtml(
-            feedbacks[i].comment
-          )
-
-          this.galleryRef.addImage({
-            src: this.images[i % this.images.length],
-            args: feedbacks[i].comment
-          })
-        }
-      })
+      // ✅ SAFE VERSION
+this.feedbackService.find().subscribe((feedbacks) => {
+  for (let i = 0; i < feedbacks.length; i++) {
+    this.galleryRef.addImage({
+      src: this.images[i % this.images.length],
+      // Pass the data as an object, NOT as an HTML string
+      args: {
+        comment: feedbacks[i].comment,
+        ratingDisplay: `(${this.stars[feedbacks[i].rating]})`
+      }
+    });
   }
-}
+});
